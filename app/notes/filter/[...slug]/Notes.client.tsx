@@ -1,77 +1,80 @@
-"use client";
+'use client';
 
-import Modal from "@/components/Modal/Modal";
-import NoteForm from "@/components/NoteForm/NoteForm";
-import NoteList from "@/components/NoteList/NoteList";
-import Pagination from "@/components/Pagination/Pagination";
-import SearchBox from "@/components/SearchBox/SearchBox";
-import { fetchNotes } from "@/lib/api";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { useDebounce } from "use-debounce";
-import { NoteTag } from "@/types/note";
-import css from "./NotesPage.module.css";
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import css from './Notes.module.css';
+import Pagination from '../../../../components/Pagination/Pagination';
+import SearchBox from '../../../../components/SearchBox/SearchBox';
+import { useState } from 'react';
+import { fetchNotes } from '../../../../lib/api';
+import NoteList from '../../../../components/NoteList/NoteList';
+import { useDebouncedCallback } from 'use-debounce';
+import { Toaster } from 'react-hot-toast';
+import { NoteTag } from '@/types/note';
+import Link from 'next/link';
 
-interface NotesClientProps {
-  tag: NoteTag | "all";
-}
+type Props = {
+  tag?: NoteTag;
+};
+function Notes({ tag }: Props) {
+  const [input, setInput] = useState('');
+  const [querySe, setQuery] = useState('');
+  const [page, setPage] = useState(1);
 
-export default function NotesClientFilter({ tag }: NotesClientProps) {
-  const [search, setSearch] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [debouncedSearch] = useDebounce(search, 500);
-
-  const { data } = useQuery({
-    queryKey: ["notes", debouncedSearch, currentPage, tag],
+  const { data, isLoading, isSuccess, isFetching } = useQuery({
+    queryKey: ['notes', { page, querySe, tag }],
     queryFn: () =>
       fetchNotes({
-        search: debouncedSearch,
-        page: currentPage,
+        page,
+        search: querySe || undefined,
         perPage: 12,
-        ...(tag !== "all" ? { tag } : {}),
+        tag: tag,
       }),
-    placeholderData: (previousData) => previousData,
+    placeholderData: keepPreviousData,
   });
 
-  const handleSearchChange = (value: string) => {
-    setSearch(value);
-    setCurrentPage(1);
-  };
+  const debouncedSetQuery = useDebouncedCallback((value: string) => {
+    setQuery(value);
+  }, 500);
 
-  const handlePageChange = (selectedItem: { selected: number }) => {
-    setCurrentPage(selectedItem.selected + 1);
-  };
+  const totalPages = data?.totalPages ?? 0;
+  const notes = data?.notes ?? [];
 
-  const totalPages = data?.totalPages || 0;
+  const isEmpty = isSuccess && notes.length === 0;
 
   return (
     <div className={css.app}>
       <header className={css.toolbar}>
-        <SearchBox value={search} onChange={handleSearchChange} />
-        {totalPages > 1 && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={handlePageChange}
-          />
+        <SearchBox
+          value={input}
+          onChange={val => {
+            setInput(val);
+            debouncedSetQuery(val);
+            setPage(1);
+          }}
+        />
+
+        {isSuccess && totalPages > 1 && (
+          <Pagination totalPages={totalPages} page={page} setPage={setPage} />
         )}
-        <button className={css.button} onClick={() => setIsModalOpen(true)}>
+        <Link className={css.button} href="/notes/action/create">
           Create note +
-        </button>
+        </Link>
       </header>
 
-      {data?.notes && data.notes.length > 0 ? (
-        <NoteList notes={data.notes} />
+      {isEmpty ? (
+        <p>
+          {tag || querySe ? 'No notes found for this filter' : 'No notes yet'}
+        </p>
       ) : (
-        <p>No notes found</p>
+        !isLoading &&
+        !isFetching &&
+        isSuccess &&
+        data.notes.length > 0 && <NoteList notes={data.notes} />
       )}
 
-      {isModalOpen && (
-        <Modal onClose={() => setIsModalOpen(false)}>
-          <NoteForm onCancel={() => setIsModalOpen(false)} />
-        </Modal>
-      )}
+      <Toaster position="top-center" reverseOrder={false} />
     </div>
   );
 }
+
+export default Notes;
